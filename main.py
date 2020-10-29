@@ -1,4 +1,6 @@
 import json
+import os.path
+import re
 from datetime import datetime
 
 import pandas
@@ -10,7 +12,7 @@ import requests
 # 40000 * 6 = 240000 вакансий - скорей всего с повторами.
 # area 1 - Москва area 2 - Санкт-Петербург area 3 - Екатеринбург area 88 - Казань area 95 -
 # Тюмень area 147 - Ханты-Мансийск
-
+# UPD: Упираюсь в лимит по запросам на API, поэтому использовал csv файл с 17 тыс вакансий
 def append_similar_vacancies_id(vacancy_id, area, list):
     """
 По уникальному номеру вакансии ищется 20 похожих вакансий
@@ -185,15 +187,17 @@ def save_to_csv():
     df_H_M = get_vacancies_info(ids_H_M, "H_M.csv")
     df = df_Moscow.append(df_SPb).append(df_Kazan).append(df_Ekaterinburg).append(df_Tyumen).append(df_H_M)
     df.to_csv("Vacancies_full.csv")
-    # ids = ids_Moscow + ids_SPb + ids_Kazan + ids_Ekaterinburg + ids_Tyumen + ids_H_M
-    # # Очищаем список от дубликатов
-    # ids = list(set(ids))
-    # df = pandas.DataFrame()
-    # for id in ids:
-    #     vacancy_dict = get_vacancy_info(id)
-    #     df = df.append(vacancy_dict, ignore_index=True)
-    # df.to_csv("Vacancies_full.csv")
 
+def get_list_of_skills(df_item):
+    list_skills = []
+    for skill in df_item['skills']:
+        skill = str(skill).replace('[', '').replace(']', '').replace('{', '').replace('}', '').strip(' ').split(',')
+        for element in skill:
+            if (element != '' and str(element).__contains__('name')):
+                el = element.split(':')
+                print(el)
+                list_skills.append(el[1])
+    return list_skills
 
 def part_2(path_to_csv):
     df = pandas.read_csv(path_to_csv)
@@ -239,18 +243,43 @@ def part_2(path_to_csv):
         print(df_item["schedule"].value_counts())
         # С ключевыми навыками не понятно, как искать вхождения и уникальные значения. Скорей всего нужно парсить
         # ключевые навыки
+        #Возможно можно уникальный навыки в столбцы превратить, беря ключевые слова
+        #Или создать таблицу (dataframe) по ключевым навыкам с столбцами id, value и посчитать вхождения
         print("Кол-во уникальных значений ключевых навыков = " + str(len(df_item["skills"].unique())))
         print("Кол-во вхождений значений ключевых навыков")
         print(df_item["skills"].value_counts())
-        #df_item.to_csv("max_salary_group" + str(i) + '.csv')
+        dict_skills = get_list_of_skills(df_item)
+        skills_df = pandas.DataFrame(dict_skills, columns=["skill"])
+        print(skills_df.value_counts())
+        #Сохранить группы по файлам csv
+        if os.path.isdir("MaxSalaryGroups"):
+            df_item.to_csv("MaxSalaryGroups/max_salary_group" + str(i) + '.csv')
+        else:
+            os.mkdir("MaxSalaryGroups")
+            df_item.to_csv("MaxSalaryGroups/max_salary_group" + str(i) + '.csv')
         i = i + 1
 
 
 def part_3(path_to_csv):
     df = pandas.read_csv(path_to_csv)
     df["name"] = df["name"].str.lower()
-    groups = df.groupby(by=["name"])
-    for group_name, df_group in groups:
+    #При группировке по названию вакансии из ~17000 вакансии получается 11000 уникальных,
+    # так что выделю ряд вакансий вручную
+    vacancy_list = ['разработчик|developer|программист', 'инженер|engineer', 'архитектор|architect', 'аналитик|analyst',
+                    'data', 'data scientist', 'c++', 'c#', 'python', 'js|javascript', '1c', 'goland', 'frontend',
+                    'backend', 'full-stack|fullstack', 'информационная безопасность|information security',
+                    'security|безопасность']
+    #groups = df.groupby(by=["name"])
+    df_group = pandas.DataFrame()
+    for vacancy in vacancy_list:
+        for v in vacancy.split('|'):
+            dfV = df[df["name"].replace('/', '').str.contains(re.escape(v))]
+        if (len(df_group.columns) == 0):
+            df_group = dfV.copy()
+        else:
+            df_group.append(dfV)
+        group_name = vacancy
+
         print('======================' + str(group_name) + '======================')
         print("Кол-во уникальных значений минимальной зарплаты = " + str(df_group["min_salary"].nunique()))
         print("Кол-во вхождений минимальной зарплаты")
@@ -278,10 +307,20 @@ def part_3(path_to_csv):
         print("Кол-во уникальных значений ключевых навыков = " + str(len(df_group["skills"].unique())))
         print("Кол-во вхождений значений ключевых навыков")
         print(df_group["skills"].value_counts())
-        #df_group.to_csv(str(group_name) + '.csv')
+        dict_skills = get_list_of_skills(df_group)
+        skills_df = pandas.DataFrame(dict_skills, columns=["skill"])
+        print(skills_df.value_counts())
+
+        #Сохранить группы по файлам csv
+        if os.path.isdir("VacancyGroups"):
+            df_group.to_csv("VacancyGroups/" + str(group_name).replace('/', '') + '.csv')
+        else:
+            os.mkdir("VacancyGroups")
+            df_group.to_csv("VacancyGroups/" + str(group_name).replace('/', '') + '.csv')
+        df_group = pandas.DataFrame()
 
 #get_vacancy_info('17968935')
 
-save_to_csv()
+#save_to_csv()
 part_2("Vacancies.csv")
-part_3("Vacanices.csv")
+part_3("Vacancies.csv")
